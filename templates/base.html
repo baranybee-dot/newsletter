@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="utf-8">
+  <title>Vates hírlevél-automatizáló</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="logo">VATES<br><span>hírlevél-varázsló</span></div>
+    <ol class="steps">
+      {% for key, label in steps %}
+        <li class="{% if active == key %}active{% endif %}">
+          <a href="{{ url_for(key) }}">{{ loop.index }}. {{ label }}</a>
+        </li>
+      {% endfor %}
+    </ol>
+  </aside>
+  <main class="content">
+    {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

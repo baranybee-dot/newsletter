@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>1. Szöveg generálása</h1>
+
+{% if not style_cache %}
+  <div class="alert warn">
+    Még nincs Vates stílusprofil. Az első generálás előtt töltsd be a korábbi
+    kampányokat (50 levél elemzése, eltarthat néhány percig).
+    <form method="post" action="{{ url_for('refresh_style') }}">
+      <button type="submit">Stílusprofil felépítése</button>
+    </form>
+  </div>
+{% endif %}
+
+<form method="post" class="card">
+  <label>Téma / brief
+    <textarea name="topic" rows="2" placeholder="pl. Legendák kollekció launch">{{ state.topic or '' }}</textarea>
+  </label>
+
+  <label>Stíluskövetés: <output id="adh-out">{{ state.adherence if state.adherence is not none else 80 }}</output>/100
+    <input type="range" name="adherence" min="0" max="100"
+           value="{{ state.adherence if state.adherence is not none else 80 }}"
+           oninput="document.getElementById('adh-out').value=this.value">
+    <small>0 = teljesen szabad kreatív irány · 100 = szigorúan a Vates-stílus</small>
+  </label>
+
+  <fieldset>
+    <legend>Hangulat</legend>
+    {% for value, label in moods %}
+      <label class="inline">
+        <input type="checkbox" name="moods" value="{{ value }}"
+               {% if value in (state.selected_moods or []) %}checked{% endif %}> {{ label }}
+      </label>
+    {% endfor %}
+  </fieldset>
+
+  <label>Opcionális megjegyzések
+    <textarea name="notes" rows="2">{{ state.notes or '' }}</textarea>
+  </label>
+
+  {% if state.body %}
+    <label>Újrageneráláshoz visszajelzés (opcionális)
+      <input type="text" name="feedback" placeholder="pl. legyen rövidebb, kevesebb emoji">
+    </label>
+  {% endif %}
+
+  <button type="submit" name="action" value="generate">
+    {{ 'Újragenerálás' if state.body else 'Generálás' }}
+  </button>
+</form>
+
+{% if state.body %}
+<form method="post" class="card">
+  <h2>Generált szöveg — szerkeszthető</h2>
+  <label>Tárgy (max 60 karakter)
+    <input type="text" name="subject" maxlength="60" value="{{ state.subject or '' }}">
+  </label>
+  <label>Előnézeti szöveg (max 90 karakter)
+    <input type="text" name="preview_text" maxlength="90" value="{{ state.preview_text or '' }}">
+  </label>
+  <label>Törzs (félkövér: **így**)
+    <textarea name="body" rows="14">{{ state.body or '' }}</textarea>
+  </label>
+  <button type="submit" name="action" value="continue" class="primary">Jó lesz, tovább →</button>
+</form>
+{% endif %}
+{% endblock %}

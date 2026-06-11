@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>4. Header finomhangolás</h1>
+
+<div class="card">
+  <img id="preview" class="header-preview"
+       src="{{ url_for('tmp_image', filename=variant.file) }}?t={{ cache_bust }}" alt="header előnézet">
+</div>
+
+<form method="post" class="card" id="adjust-form">
+  <label>Headline
+    <input type="text" name="headline" id="headline" value="{{ variant.headline }}">
+  </label>
+  <label>Betűméret: <output id="fs-out">{{ variant.font_size or 64 }}</output>px
+    <input type="range" name="font_size" id="font_size" min="16" max="96"
+           value="{{ variant.font_size or 64 }}"
+           oninput="document.getElementById('fs-out').value=this.value">
+  </label>
+  <label>Pozíció
+    <select name="position" id="position">
+      {% for p in positions %}
+        <option value="{{ p }}" {% if variant.position == p %}selected{% endif %}>{{ p }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Szövegszín
+    <input type="color" name="color" id="color" value="{{ variant.color or '#FFFFFF' }}">
+  </label>
+  <div class="actions">
+    <button type="submit" name="action" value="apply">Előnézet frissítése</button>
+    <button type="submit" name="action" value="finalize" class="primary">Header véglegesítése →</button>
+  </div>
+</form>
+
+<script>
+// AJAX élő újrakompozitálás — JS nélkül a form POST is működik
+const form = document.getElementById('adjust-form');
+let timer = null;
+function recomposite() {
+  fetch('{{ url_for("recomposite") }}', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      headline: document.getElementById('headline').value,
+      font_size: document.getElementById('font_size').value,
+      position: document.getElementById('position').value,
+      color: document.getElementById('color').value,
+    }),
+  }).then(r => r.json()).then(d => {
+    if (d.url) document.getElementById('preview').src = d.url;
+    if (d.font_size) {
+      document.getElementById('font_size').value = d.font_size;
+      document.getElementById('fs-out').value = d.font_size;
+    }
+  });
+}
+['headline', 'font_size', 'position', 'color'].forEach(id => {
+  document.getElementById(id).addEventListener('change', () => {
+    clearTimeout(timer); timer = setTimeout(recomposite, 300);
+  });
+});
+</script>
+{% endblock %}

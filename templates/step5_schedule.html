@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>5. Időzítés és célközönség</h1>
+
+<form method="post">
+  <div class="card">
+    <h2>Célközönség</h2>
+    <input type="search" id="audience-search" placeholder="Keresés...">
+    <div class="audience-list">
+      <h3>Listák</h3>
+      {% for l in lists %}
+        <label class="inline audience-item">
+          <input type="checkbox" name="audiences" value="{{ l.id }}"
+                 {% if l.id in (state.audiences or []) %}checked{% endif %}> {{ l.name }}
+        </label>
+      {% endfor %}
+      <h3>Szegmensek</h3>
+      {% for s in segments %}
+        <label class="inline audience-item">
+          <input type="checkbox" name="audiences" value="{{ s.id }}"
+                 {% if s.id in (state.audiences or []) %}checked{% endif %}> {{ s.name }}
+        </label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Küldési időpont <small>(magyar idő szerint — Europe/Budapest)</small></h2>
+    <label>Dátum
+      <input type="date" name="send_date" min="{{ min_date }}"
+             value="{{ (state.send_local or '')[:10] }}" required>
+    </label>
+    <label>Időpont (óra:perc)
+      <input type="time" name="send_time" value="{{ (state.send_local or '')[11:16] or '18:00' }}" required>
+    </label>
+    <p><small>A kampány mindig időzítve lesz, sosem küldjük azonnal.</small></p>
+  </div>
+
+  <div class="card">
+    <h2>Kampány neve</h2>
+    <input type="text" name="campaign_name" value="{{ default_name }}">
+  </div>
+
+  <button type="submit" class="primary">Tovább a végső ellenőrzéshez →</button>
+</form>
+
+<script>
+document.getElementById('audience-search').addEventListener('input', function () {
+  const q = this.value.toLowerCase();
+  document.querySelectorAll('.audience-item').forEach(el => {
+    el.style.display = el.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+});
+</script>
+{% endblock %}

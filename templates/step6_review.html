@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>6. Végső ellenőrzés</h1>
+
+{% if success %}
+  <div class="alert success">
+    <h2>✓ A kampány sikeresen időzítve!</h2>
+    <p>
+      <a href="https://www.klaviyo.com/campaign/{{ campaign_id }}/wizard"
+         target="_blank" rel="noopener">Megnyitás a Klaviyo-ban →</a>
+    </p>
+  </div>
+{% else %}
+  <div class="card">
+    <h2>Tárgy és előnézet</h2>
+    <p><strong>{{ state.subject }}</strong></p>
+    <p>{{ state.preview_text }}</p>
+  </div>
+
+  <div class="card">
+    <h2>Header kép</h2>
+    <img class="header-preview small"
+         src="{{ url_for('tmp_image', filename=variant.file) }}?t={{ cache_bust }}" alt="header">
+    <p><small>A kép erre mutat: {{ state.header_href }}</small></p>
+  </div>
+
+  <div class="card">
+    <h2>Levéltörzs</h2>
+    <div class="email-preview">{{ state.body | replace('**', '') }}</div>
+    <h3>Linkek</h3>
+    <ul>
+      {% for link in state.links %}
+        <li>„{{ link.anchor }}” → {{ link.url }}{% if link.highlight %} <em>(kiemelt)</em>{% endif %}</li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>Időzítés és célközönség</h2>
+    <p>Küldés: <strong>{{ state.send_local }}</strong> (magyar idő)</p>
+    <p>Kampány neve: {{ state.campaign_name }}</p>
+    <p>Célközönség:</p>
+    <ul>{% for name in audience_names %}<li>{{ name }}</li>{% endfor %}</ul>
+  </div>
+
+  <div class="actions">
+    <a class="button" href="{{ url_for('step1') }}">← Vissza szerkeszteni</a>
+    <form method="post" style="display:inline"
+          onsubmit="return confirm('Biztosan időzíted a kampányt a Klaviyo-ban?');">
+      <button type="submit" class="primary big">✓ Kampány időzítése a Klaviyo-ban</button>
+    </form>
+  </div>
+{% endif %}
+{% endblock %}

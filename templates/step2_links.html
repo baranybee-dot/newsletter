@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>2. Szöveg és linkek</h1>
+
+<div class="card">
+  <h2>A levél szövege</h2>
+  <div class="email-preview">{{ state.body | replace('**', '') }}</div>
+</div>
+
+<div class="card">
+  <h2>Linkek ({{ state.links | length }})</h2>
+  <p><small>Csak vates.hu linkek engedélyezettek. A „kiemelt” link narancs színt kap a levélben.</small></p>
+  {% for link in state.links %}
+    <form method="post" class="link-row">
+      <input type="hidden" name="index" value="{{ loop.index0 }}">
+      <span class="anchor">„{{ link.anchor }}”</span>
+      <input type="url" name="url" value="{{ link.url }}">
+      <label class="inline">
+        <input type="checkbox" name="highlight" {% if link.highlight %}checked{% endif %}> kiemelt
+      </label>
+      <button type="submit" name="action" value="update">Mentés</button>
+      <button type="submit" name="action" value="remove" class="danger">Törlés</button>
+      {% if link.reason %}<small class="reason">{{ link.reason }}</small>{% endif %}
+    </form>
+  {% else %}
+    <p>Nincs link. Adj hozzá kézzel, vagy térj vissza az 1. lépéshez.</p>
+  {% endfor %}
+
+  <form method="post" class="link-row add">
+    <input type="text" name="anchor" placeholder="horgonyszöveg (pontosan a szövegből)">
+    <input type="url" name="url" placeholder="https://vates.hu/collections/...">
+    <button type="submit" name="action" value="add_manual">+ Link hozzáadása</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Header kép linkje</h2>
+  <form method="post" class="link-row">
+    <input type="url" name="header_href" value="{{ state.header_href or 'https://vates.hu/' }}">
+    <button type="submit" name="action" value="set_header">Mentés</button>
+  </form>
+</div>
+
+<form method="post">
+  <button type="submit" name="action" value="continue" class="primary">Tovább a header képhez →</button>
+</form>
+{% endblock %}

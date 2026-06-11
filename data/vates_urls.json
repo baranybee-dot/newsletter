@@ -1,0 +1,37 @@
+{
+  "comment": "A linkajánláshoz használt vates.hu URL-ek. Bővíthető kézzel.",
+  "collections": [
+    {"url": "https://vates.hu/collections/ujdonsagok/", "name": "Újdonságok", "theme": "új érkezések, legfrissebb termékek"},
+    {"url": "https://vates.hu/collections/all/", "name": "Minden termék", "theme": "teljes katalógus"},
+    {"url": "https://vates.hu/collections/noi/", "name": "Női ruházat", "theme": "női szabású pólók, pulóverek"},
+    {"url": "https://vates.hu/collections/noi-polok/", "name": "Női pólók", "theme": "női pólók"},
+    {"url": "https://vates.hu/collections/ferfi-polok/", "name": "Férfi pólók", "theme": "férfi pólók"},
+    {"url": "https://vates.hu/collections/puloverek/", "name": "Pulóverek", "theme": "pulóverek, hoodie-k"},
+    {"url": "https://vates.hu/collections/telefontokok/", "name": "Telefontokok", "theme": "művészi telefontokok, 150+ készüléktípus"},
+    {"url": "https://vates.hu/collections/mesekollekcio/", "name": "MeseKollekció", "theme": "retró magyar mesehősök: Süsü, TV Maci, Frakk"},
+    {"url": "https://vates.hu/collections/vates-legendak/", "name": "Vates Legendák", "theme": "magyar irodalmi legendák: János Vitéz, Toldi, Ludas Matyi, Pál utcai fiúk"},
+    {"url": "https://vates.hu/collections/vates-classics", "name": "Vates Classics", "theme": "közösségi kedvenc irodalmi idézetek hétköznapi viseleten"},
+    {"url": "https://vates.hu/collections/irodalom-termekek/", "name": "Irodalmi termékek", "theme": "irodalmi ihletésű termékek (Ady, József Attila, Radnóti)"},
+    {"url": "https://vates.hu/collections/minimal", "name": "Minimal kollekció", "theme": "ikonikus idézetek letisztult, minimalista stílusban"},
+    {"url": "https://vates.hu/collections/the-van-gogh-collection", "name": "Van Gogh kollekció", "theme": "Van Gogh festmények modern újraértelmezése"},
+    {"url": "https://vates.hu/collections/aeternum", "name": "Aeternum", "theme": "az állandóság és örökkévalóság témái, legújabb kollekció"},
+    {"url": "https://vates.hu/collections/simon-marton/", "name": "Vates x Simon Márton", "theme": "kortárs költő verssorai ázsiai művészeti vizualitással"},
+    {"url": "https://vates.hu/collections/vates-x-hp/", "name": "Vates x Halott Pénz", "theme": "limitált kollab a zenekar ikonikus dalszövegeivel"},
+    {"url": "https://vates.hu/collections/vates-x-a-kis-herceg/", "name": "Vates x A kis herceg", "theme": "A kis herceg licencelt kollekció"},
+    {"url": "https://vates.hu/collections/vates-magyar-kepmesek/", "name": "Vates x Magyar Képmesék", "theme": "1848-as forradalom témájú illusztrációk"},
+    {"url": "https://vates.hu/collections/akciok/", "name": "Akciók / Outlet", "theme": "leárazott termékek"},
+    {"url": "https://vates.hu/collections/ajandekutalvany", "name": "Ajándékutalvány", "theme": "Vates Arany Kártya ajándékutalványok"}
+  ],
+  "pages": [
+    {"url": "https://vates.hu/rolunk/", "name": "Rólunk", "theme": "márkatörténet"},
+    {"url": "https://vates.hu/publikaciok/", "name": "Blog", "theme": "hírek, publikációk, beküldött versek"},
+    {"url": "https://vates.hu/blogs/publikaciok/top-10-legszebb-idezet-ballagasra/", "name": "Top 10 ballagási idézet", "theme": "ballagás, érettségi szezon"},
+    {"url": "https://vates.hu/blogs/publikaciok/a-legszebb-es-a-legkeresettebb-eskuvoi-idezetek/", "name": "Esküvői idézetek", "theme": "esküvői szezon"}
+  ],
+  "brand_facts": [
+    "Magyar művészeti ihletésű ruhamárka, 2019 óta",
+    "Organikus pamut pólók, pulóverek, telefontokok, zoknik, kiegészítők",
+    "Ingyenes szállítás 30 000 Ft felett",
+    "Témák: magyar irodalom, retró mesék, képzőművészet, magyar popkultúra"
+  ]
+}

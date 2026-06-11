@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>3. Header kép</h1>
+
+{% if not din_ok %}
+  <div class="alert warn">A DIN fontfájlok még nincsenek feltöltve a
+  <code>static/fonts/</code> mappába — ideiglenesen helyettesítő betűtípust használunk.</div>
+{% endif %}
+
+{% if state.header_variants %}
+  <form method="post" class="variants">
+    {% for v in state.header_variants %}
+      <label class="variant card">
+        <img src="{{ url_for('tmp_image', filename=v.file) }}?t={{ cache_bust }}" alt="{{ v.headline }}">
+        <div class="meta">
+          <strong>{{ v.headline }}</strong>
+          <small>{{ v.reason }}</small>
+        </div>
+        <input type="radio" name="variant" value="{{ loop.index0 }}" required> Ezt választom
+      </label>
+    {% endfor %}
+    <div class="actions">
+      <button type="submit" name="action" value="select" class="primary">Kiválaszt és finomhangol →</button>
+      <button type="submit" name="action" value="regenerate">Új variánsok kérése</button>
+    </div>
+  </form>
+{% else %}
+  <div class="card"><p>Nem készültek variánsok. Ellenőrizd a fotókönyvtárat, majd frissíts.</p></div>
+{% endif %}
+{% endblock %}
