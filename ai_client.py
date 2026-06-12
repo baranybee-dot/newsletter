@@ -252,40 +252,35 @@ def build_visual_style_profile(reference_dir):
 
 
 # ---------------------------------------------------------------------------
-# Fotóválasztás a könyvtárból + headline generálás
+# Headline-variánsok az operátor által feltöltött fotóhoz
 # ---------------------------------------------------------------------------
 
-def select_photos_and_headlines(body_text, photo_dir, visual_profile):
-    """A levélszöveghez legjobban illő 3 fotó + headline-ok + pozíció.
+def generate_headline_variants(body_text, photo_path, visual_profile):
+    """A feltöltött fotóhoz 3 különböző headline + pozíció variáns.
 
-    Visszatérés: [{"file", "reason", "headline", "position"}] (max 3).
+    Visszatérés: [{"headline", "position", "reason"}] (pontosan 3).
     """
-    files = sorted(
-        f for f in os.listdir(photo_dir)
-        if f.lower().endswith((".jpg", ".jpeg", ".png", ".webp"))
-    )
-    if not files:
-        return []
-    files = files[:20]  # egy hívásban max 20 kép
-    content = []
-    for i, f in enumerate(files):
-        content.append({"type": "text", "text": f"KÉP #{i} — fájlnév: {f}"})
-        content.append(_image_content(os.path.join(photo_dir, f)))
-    content.append({
-        "type": "text",
-        "text": (
-            f"HÍRLEVÉL SZÖVEGE:\n{body_text}\n\n"
-            f"VIZUÁLIS STÍLUSPROFIL:\n{visual_profile}\n\n"
-            "Válaszd ki a 3 fotót, ami kontextuálisan legjobban illik a hírlevél "
-            "témájához. Mindegyikhez:\n"
-            "- rövid magyar indoklás (reason)\n"
-            "- ütős, NAGYBETŰS magyar headline, max 5-7 szó (headline)\n"
-            "- a fotó kompozíciója alapján döntsd el a szöveg helyét (position): "
-            "\"bottom-left\" vagy \"bottom-center\"\n\n"
-            "CSAK valid JSON-t adj vissza: "
-            '[{"index": 0, "reason": "...", "headline": "...", "position": "bottom-left"}]'
-        ),
-    })
+    content = [
+        _image_content(photo_path, max_size=800),
+        {
+            "type": "text",
+            "text": (
+                f"HÍRLEVÉL SZÖVEGE:\n{body_text}\n\n"
+                f"VIZUÁLIS STÍLUSPROFIL (korábbi Vates headerek alapján):\n{visual_profile}\n\n"
+                "A fenti fotóból készül a hírlevél header képe (600x400). Adj "
+                "3 KÜLÖNBÖZŐ headline-variánst, eltérő megközelítéssel (pl. "
+                "érzelmi horog / termékfókusz / játékos-ütős). Mindegyikhez:\n"
+                "- ütős, NAGYBETŰS magyar headline, max 5-7 szó (headline)\n"
+                "- a fotó kompozíciója alapján a szöveg helye (position): "
+                "\"bottom-left\", \"bottom-center\", \"bottom-right\", "
+                "\"top-left\" vagy \"top-center\" — oda tedd, ahol nem takar "
+                "fontos képi elemet és jól olvasható\n"
+                "- rövid magyar indoklás (reason)\n\n"
+                "CSAK valid JSON-t adj vissza: "
+                '[{"headline": "...", "position": "bottom-left", "reason": "..."}]'
+            ),
+        },
+    ]
     resp = _client().messages.create(
         model=MODEL, max_tokens=1000,
         messages=[{"role": "user", "content": content}],
@@ -293,12 +288,10 @@ def select_photos_and_headlines(body_text, photo_dir, visual_profile):
     picks = _extract_json(resp.content[0].text)
     results = []
     for p in picks[:3]:
-        idx = p.get("index")
-        if isinstance(idx, int) and 0 <= idx < len(files):
+        if p.get("headline"):
             results.append({
-                "file": files[idx],
-                "reason": p.get("reason", ""),
-                "headline": (p.get("headline") or "").upper(),
+                "headline": p["headline"].upper(),
                 "position": p.get("position", "bottom-left"),
+                "reason": p.get("reason", ""),
             })
     return results

@@ -24,8 +24,9 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-only-secret")
 
 BUDAPEST = ZoneInfo("Europe/Budapest")
 SESSION_DIR = os.path.join("tmp", "sessions")
-PHOTO_DIR = os.environ.get("PHOTO_LIBRARY_PATH") or os.path.join("static", "photo_library")
 REFERENCE_DIR = os.environ.get("REFERENCE_HEADERS_PATH") or os.path.join("static", "reference_headers")
+ALLOWED_PHOTO_EXT = {".jpg", ".jpeg", ".png", ".webp"}
+SOURCE_PHOTO = "source_photo.jpg"
 
 MOODS = [
     ("playful", "Játékos"), ("emotional", "Érzelmes"), ("urgent", "Sürgető"),
@@ -100,13 +101,6 @@ def tmp_image(filename):
     if "/" in filename or "\\" in filename or filename.startswith("."):
         abort(404)
     return send_from_directory(os.path.abspath(session_image_dir()), filename)
-
-
-@app.get("/photo/<path:filename>")
-def photo(filename):
-    if ".." in filename:
-        abort(404)
-    return send_from_directory(os.path.abspath(PHOTO_DIR), filename)
 
 
 # ---------------------------------------------------------------------------
@@ -252,7 +246,7 @@ def step2():
 
 
 # ---------------------------------------------------------------------------
-# 3. lépés: header kép generálás
+# 3. lépés: fotó feltöltése + headline-variánsok generálása
 # ---------------------------------------------------------------------------
 
 @app.route("/step3", methods=["GET", "POST"])
@@ -264,7 +258,26 @@ def step3():
 
     if request.method == "POST":
         action = request.form.get("action")
-        if action == "select":
+        if action == "upload":
+            file = request.files.get("photo")
+            ext = os.path.splitext(file.filename or "")[1].lower() if file else ""
+            if not file or not file.filename:
+                error = "Válassz egy képfájlt."
+            elif ext not in ALLOWED_PHOTO_EXT:
+                error = "Csak JPG, PNG vagy WEBP kép tölthető fel."
+            else:
+                try:
+                    from PIL import Image
+                    img = Image.open(file.stream)
+                    img = img.convert("RGB")
+                    img.save(os.path.join(session_image_dir(), SOURCE_PHOTO),
+                             "JPEG", quality=92)
+                    state["source_photo"] = SOURCE_PHOTO
+                    state.pop("header_variants", None)
+                    state.pop("selected_variant", None)
+                except Exception as exc:  # noqa: BLE001
+                    error = f"A kép nem dolgozható fel: {exc}"
+        elif action == "select":
             idx = int(request.form.get("variant", -1))
             if 0 <= idx < len(state.get("header_variants", [])):
                 state["selected_variant"] = idx
@@ -272,30 +285,30 @@ def step3():
                 return redirect(url_for("step4"))
         elif action == "regenerate":
             state.pop("header_variants", None)
-            save_state(state)
+        elif action == "new_photo":
+            state.pop("source_photo", None)
+            state.pop("header_variants", None)
+            state.pop("selected_variant", None)
+        save_state(state)
 
-    if "header_variants" not in state:
+    if state.get("source_photo") and "header_variants" not in state:
         try:
             visual = ai_client.load_visual_cache()
-            if not visual:
-                profile = ai_client.build_visual_style_profile(REFERENCE_DIR)
-            else:
-                profile = visual["profile"]
-            picks = ai_client.select_photos_and_headlines(state["body"], PHOTO_DIR, profile)
-            if not picks:
-                error = ("A fotókönyvtár üres (" + PHOTO_DIR + "). "
-                         "Tölts fel képeket, majd frissítsd az oldalt.")
+            profile = (visual["profile"] if visual
+                       else ai_client.build_visual_style_profile(REFERENCE_DIR))
+            photo_path = os.path.join(session_image_dir(), state["source_photo"])
+            picks = ai_client.generate_headline_variants(
+                state["body"], photo_path, profile
+            )
             variants = []
-            img_dir = session_image_dir()
             for i, pick in enumerate(picks, start=1):
-                out = os.path.join(img_dir, f"header_v{i}.jpg")
+                out = os.path.join(session_image_dir(), f"header_v{i}.jpg")
                 used_size = image_composer.compose_header(
-                    os.path.join(PHOTO_DIR, pick["file"]), pick["headline"],
-                    out, position=pick["position"],
+                    photo_path, pick["headline"], out, position=pick["position"],
                 )
                 variants.append({
                     "file": f"header_v{i}.jpg",
-                    "photo": pick["file"],
+                    "photo": state["source_photo"],
                     "headline": pick["headline"],
                     "position": pick["position"],
                     "font_size": used_size,
@@ -305,8 +318,7 @@ def step3():
             state["header_variants"] = variants
             save_state(state)
         except Exception as exc:  # noqa: BLE001
-            error = f"A header generálás nem sikerült: {exc}"
-            state.setdefault("header_variants", [])
+            error = f"A variánsok generálása nem sikerült: {exc}"
 
     return render_template(
         "step3_image.html", state=state, error=error, active="step3",
@@ -347,8 +359,8 @@ def _apply_adjustments(state, variant, form):
         pass
     out = os.path.join(session_image_dir(), variant["file"])
     used = image_composer.compose_header(
-        os.path.join(PHOTO_DIR, variant["photo"]), variant["headline"], out,
-        position=variant["position"], font_size=variant["font_size"],
+        os.path.join(session_image_dir(), variant["photo"]), variant["headline"],
+        out, position=variant["position"], font_size=variant["font_size"],
         color=variant["color"],
     )
     variant["font_size"] = used

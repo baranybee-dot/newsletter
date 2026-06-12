@@ -7,7 +7,7 @@ Webes eszköz Klaviyo email kampányok összeállítására és időzítésére 
 
 1. **Szöveg generálása** — Claude a korábbi 50 kampányból tanult Vates-stílusban ír (stíluskövetés-csúszka, hangulatcímkék)
 2. **Szöveg és linkek** — AI-javasolt vates.hu linkek, kézi szerkesztéssel
-3. **Header kép** — a fotókönyvtárból AI által választott 3 fotó + headline, Pillow-kompozit (600×400)
+3. **Header kép** — az operátor feltölt egy fotót, abból az AI 3 headline-variánst készít, Pillow-kompozit (600×400)
 4. **Finomhangolás** — headline, betűméret, pozíció, szín, élő előnézettel
 5. **Időzítés és célközönség** — Klaviyo listák/szegmensek, küldés mindig magyar idő (Europe/Budapest) szerint időzítve
 6. **Végső ellenőrzés** — beküldés a Klaviyo-ba (kép feltöltés → sablon klónozás → tartalom injektálás → kampány létrehozás → időzítés), hiba esetén teljes rollback
@@ -30,11 +30,10 @@ Lásd `.env.example`. Kötelező: `KLAVIYO_API_KEY`, `ANTHROPIC_API_KEY`,
 
 - `static/fonts/DINPro-Bold.otf` vagy `DIN2014-Bold.ttf` — amíg hiányzik, helyettesítő fonttal dolgozik
 - `static/reference_headers/` — 50 referencia header kép a vizuális stílusprofilhoz
-- `static/photo_library/` — a választható fotók (vagy `PHOTO_LIBRARY_PATH` env változó)
 
-> A Railway fájlrendszere ephemeral: a fotókat a repóba kell commitolni, vagy
-> külső tárhelyről (S3/CDN) kell kiszolgálni. A `style_cache.json` és a
-> session-képek deploykor törlődnek — ezek újragenerálhatók.
+> A Railway fájlrendszere ephemeral: a `style_cache.json` és a session-képek
+> (köztük a feltöltött fotók) deploykor törlődnek — ezek újragenerálhatók,
+> illetve a fotót az operátor kampányonként tölti fel.
 
 ## Megjegyzések
 
