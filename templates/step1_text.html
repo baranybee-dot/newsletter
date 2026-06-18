@@ -4,12 +4,12 @@
 
 {% if not style_cache %}
   <div class="alert warn">
-    Még nincs Vates stílusprofil. Az első generálás előtt töltsd be a korábbi
-    kampányokat (50 levél elemzése, eltarthat néhány percig).
-    <form method="post" action="{{ url_for('refresh_style') }}">
-      <button type="submit">Stílusprofil felépítése</button>
-    </form>
+    Még nincs Vates stílusprofil. A szöveggeneráláshoz előbb
+    <a href="{{ url_for('style_admin') }}">építsd fel a stílusprofilt</a>
+    (egyszeri lépés, a korábbi 50 levél alapján).
   </div>
+{% else %}
+  <p><small><a href="{{ url_for('style_admin') }}">Stílusprofil frissítése</a></small></p>
 {% endif %}
 
 <form method="post" class="card">
@@ -38,20 +38,34 @@
     <textarea name="notes" rows="2">{{ state.notes or '' }}</textarea>
   </label>
 
-  {% if state.body %}
-    <label>Újrageneráláshoz visszajelzés (opcionális)
-      <input type="text" name="feedback" placeholder="pl. legyen rövidebb, kevesebb emoji">
-    </label>
-  {% endif %}
-
-  <button type="submit" name="action" value="generate">
-    {{ 'Újragenerálás' if state.body else 'Generálás' }}
+  <button type="submit" name="action" value="build_prompt" class="primary">
+    Prompt összeállítása →
   </button>
 </form>
 
+{% if prompt %}
+<div class="card">
+  <h2>1. Másold ezt a Claude-ba</h2>
+  <p><small>Nyisd meg a <a href="https://claude.ai" target="_blank" rel="noopener">claude.ai</a>-t,
+  illeszd be, és a választ (JSON) másold vissza alább.</small></p>
+  <button type="button" class="copy-btn" data-target="gen-prompt">Vágólapra másolom</button>
+  <textarea id="gen-prompt" rows="12" readonly>{{ prompt }}</textarea>
+</div>
+
+<form method="post" class="card">
+  <input type="hidden" name="topic" value="{{ state.topic or '' }}">
+  <input type="hidden" name="adherence" value="{{ state.adherence if state.adherence is not none else 80 }}">
+  <input type="hidden" name="notes" value="{{ state.notes or '' }}">
+  <h2>2. Illeszd be a Claude válaszát</h2>
+  <textarea name="response" rows="10" placeholder='{"subject": "...", "preview_text": "...", "body": "..."}'></textarea>
+  <button type="submit" name="action" value="use_response" class="primary">Válasz feldolgozása →</button>
+</form>
+{% endif %}
+
 {% if state.body %}
 <form method="post" class="card">
-  <h2>Generált szöveg — szerkeszthető</h2>
+  <h2>Szöveg — szerkeszthető</h2>
+  <p><small>Igazíts rajta, ha kell. Újrageneráláshoz a Claude-chatben kérj módosítást, és illeszd be újra a fenti mezőbe.</small></p>
   <label>Tárgy (max 60 karakter)
     <input type="text" name="subject" maxlength="60" value="{{ state.subject or '' }}">
   </label>

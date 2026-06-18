@@ -14,10 +14,38 @@
     <label>Fotó
       <input type="file" name="photo" accept=".jpg,.jpeg,.png,.webp" required>
     </label>
-    <button type="submit" name="action" value="upload" class="primary">Feltöltés és variánsok generálása →</button>
+    <button type="submit" name="action" value="upload" class="primary">Feltöltés →</button>
   </form>
 {% else %}
+  <div class="card">
+    <h2>A feltöltött fotó</h2>
+    <img class="header-preview" src="{{ url_for('tmp_image', filename=state.source_photo) }}?t={{ cache_bust }}" alt="feltöltött fotó">
+    <form method="post" style="margin-top:10px">
+      <button type="submit" name="action" value="new_photo">Másik fotót töltök fel</button>
+    </form>
+  </div>
+
+  {% if prompt %}
+  <div class="card">
+    <h2>1. Töltsd fel a fotót a Claude-ba, és másold be ezt a promptot</h2>
+    <p><small>A <a href="https://claude.ai" target="_blank" rel="noopener">claude.ai</a>-ben
+    csatold ugyanezt a fotót a beszélgetéshez (a gemkapocs ikonnal), majd illeszd be az alábbi szöveget.</small></p>
+    <button type="button" class="copy-btn" data-target="hl-prompt">Vágólapra másolom</button>
+    <textarea id="hl-prompt" rows="10" readonly>{{ prompt }}</textarea>
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <h2>2. Illeszd be a Claude válaszát (3 felirat)</h2>
+    <form method="post">
+      <textarea name="response" rows="8" placeholder='[{"headline": "...", "position": "bottom-left", "reason": "..."}]'></textarea>
+      <button type="submit" name="action" value="use_headlines" class="primary">Feliratok feldolgozása →</button>
+    </form>
+  </div>
+
   {% if state.header_variants %}
+  <div class="card">
+    <h2>3. Válassz a variánsok közül</h2>
     <form method="post" class="variants">
       {% for v in state.header_variants %}
         <label class="variant card">
@@ -31,17 +59,9 @@
       {% endfor %}
       <div class="actions">
         <button type="submit" name="action" value="select" class="primary">Kiválaszt és finomhangol →</button>
-        <button type="submit" name="action" value="regenerate">Új headline-ok kérése</button>
-        <button type="submit" name="action" value="new_photo">Másik fotót töltök fel</button>
       </div>
     </form>
-  {% else %}
-    <div class="card">
-      <p>A variánsok generálása nem készült el. Frissítsd az oldalt, vagy tölts fel másik fotót.</p>
-      <form method="post">
-        <button type="submit" name="action" value="new_photo">Másik fotót töltök fel</button>
-      </form>
-    </div>
+  </div>
   {% endif %}
 {% endif %}
 {% endblock %}

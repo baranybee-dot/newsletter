@@ -1,18 +1,16 @@
-"""Minden Claude API hívás: stíluselemzés, szöveggenerálás, linkajánlás,
-fotóválasztás, headline-generálás, vizuális stílusprofil."""
+"""Copy-paste híd: az AI-hívások helyett a program promptokat állít össze,
+amiket az operátor a saját Claude-előfizetésébe (claude.ai) másol, majd a
+választ visszamásolja. Így nincs szükség ANTHROPIC_API_KEY-re és nincs API-költség.
 
-import base64
-import io
+Ez a modul csak prompt-építőket és válasz-értelmezőket tartalmaz —
+semmilyen hálózati hívást nem indít.
+"""
+
 import json
 import os
 import re
 
-import anthropic
-from PIL import Image
-
-MODEL = "claude-sonnet-4-20250514"
 STYLE_CACHE_FILE = "style_cache.json"
-VISUAL_CACHE_FILE = "visual_style_cache.json"
 URLS_FILE = os.path.join("data", "vates_urls.json")
 
 MOOD_LABELS = {
@@ -24,21 +22,29 @@ MOOD_LABELS = {
     "bold": "merész",
 }
 
-
-def _client():
-    return anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+# Statikus vizuális stílusleírás a Vates korábbi headereiből — ezt fűzzük a
+# header-felirat promptba, hogy az operátor Claude-ja tudja a márka képi stílusát.
+VISUAL_STYLE_PROFILE = (
+    "A Vates header képek 600x400-as, meleg tónusú lifestyle- vagy termékfotók, "
+    "természetes fénnyel. A felirat fehér, NAGYBETŰS, vastag DIN betűtípus, "
+    "általában a kép alján (bottom-left vagy bottom-center), néha felül. "
+    "A headline rövid és ütős (3-6 szó), a kollekció témájához illő hangulattal "
+    "(irodalom, retró mese, nyár, művészet stb.). A szöveg jól olvasható, nem "
+    "takar fontos képi elemet."
+)
 
 
 def _extract_json(text):
-    """JSON kinyerése a modell válaszából (tűri a ```json blokkot is)."""
+    """JSON kinyerése a beillesztett válaszból (tűri a ```json blokkot is)."""
     match = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
     if match:
         text = match.group(1)
-    start = text.find("{")
-    if start == -1:
-        start = text.find("[")
+    # a legkorábbi nyitó zárójel ({ vagy [) a kezdet, a legkésőbbi záró a vég
+    starts = [i for i in (text.find("{"), text.find("[")) if i != -1]
     end = max(text.rfind("}"), text.rfind("]"))
-    return json.loads(text[start:end + 1])
+    if not starts or end == -1:
+        raise ValueError("A beillesztett szövegben nem található JSON.")
+    return json.loads(text[min(starts):end + 1])
 
 
 def load_vates_urls():
@@ -46,8 +52,12 @@ def load_vates_urls():
         return json.load(f)
 
 
+def is_vates_url(url):
+    return bool(re.match(r"^https?://(www\.)?vates\.hu(/|$)", url or ""))
+
+
 # ---------------------------------------------------------------------------
-# Stílusprofil a korábbi kampányokból
+# Stílusprofil (egyszeri, copy-paste híddal)
 # ---------------------------------------------------------------------------
 
 def load_style_cache():
@@ -57,18 +67,26 @@ def load_style_cache():
     return None
 
 
-def build_style_profile(corpus):
-    """Claude elemzi a kampányszöveg-korpuszt, és stílusprofilt készít."""
+def save_style_profile(profile_text, corpus_size=None):
+    profile_text = (profile_text or "").strip()
+    with open(STYLE_CACHE_FILE, "w", encoding="utf-8") as f:
+        json.dump({"profile": profile_text, "corpus_size": corpus_size},
+                  f, ensure_ascii=False, indent=1)
+    return profile_text
+
+
+def build_style_analysis_prompt(corpus):
+    """Prompt, amit az operátor a Claude-chatjébe másol a stílusprofil felépítéséhez."""
     samples = []
     for item in corpus[:50]:
         samples.append(
             f"--- Kampány: {item['name']}\nTárgy: {item['subject']}\n"
             f"Előnézet: {item['preview_text']}\nTörzs:\n{item['body_text'][:2500]}"
         )
-    prompt = (
+    return (
         "Az alábbiakban a Vates (vates.hu) magyar ruhamárka korábban elküldött "
-        "hírlevelei találhatók. Elemezd a korpuszt, és készíts részletes "
-        "stílusprofilt, amit később hírlevélírásra használunk rendszerpromptként.\n\n"
+        "hírlevelei találhatók. Elemezd a korpuszt, és készíts részletes, tömör, "
+        "magyar nyelvű STÍLUSPROFILT, amit később hírlevélíráshoz használunk.\n\n"
         "A profil térjen ki:\n"
         "- tipikus mondathossz és ritmus\n"
         "- gyakori nyitóformulák (pl. \"Volt egy pillanat...\")\n"
@@ -76,27 +94,21 @@ def build_style_profile(corpus):
         "- CTA-megfogalmazási konvenciók\n"
         "- félkövér kiemelések használata, tegeződés, emoji-gyakoriság és -elhelyezés\n"
         "- tárgymezők és előnézeti szövegek mintázatai\n\n"
-        "Tömör, jól strukturált magyar nyelvű profilt írj.\n\n"
+        "A választ csak maga a stílusprofil legyen (nincs szükség bevezetőre).\n\n"
         + "\n\n".join(samples)
     )
-    resp = _client().messages.create(
-        model=MODEL,
-        max_tokens=1000,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    profile = resp.content[0].text
-    with open(STYLE_CACHE_FILE, "w", encoding="utf-8") as f:
-        json.dump({"profile": profile, "corpus_size": len(corpus)}, f, ensure_ascii=False, indent=1)
-    return profile
 
 
 # ---------------------------------------------------------------------------
-# Szöveggenerálás
+# Szöveggenerálás (copy-paste híd)
 # ---------------------------------------------------------------------------
 
-def generate_email_text(topic, adherence, moods, notes, style_profile,
-                        previous=None, feedback=None):
-    """Tárgy + előnézet + törzs generálása magyarul. Visszatérés: dict."""
+def build_text_generation_prompt(topic, adherence, moods, notes, style_profile):
+    """A teljes, egyben beilleszthető prompt a levélszöveg generálásához.
+
+    Mivel a claude.ai chatben nincs külön rendszerprompt-mező, mindent egy
+    blokkba fűzünk.
+    """
     if adherence >= 80:
         style_instruction = "Kövesd PONTOSAN a fenti Vates-stílusprofilt: szerkezet, ritmus, emoji-használat, CTA-stílus."
     elif adherence >= 50:
@@ -108,190 +120,108 @@ def generate_email_text(topic, adherence, moods, notes, style_profile,
 
     mood_text = ", ".join(MOOD_LABELS.get(m, m) for m in moods) if moods else "nincs megadva"
     brand = load_vates_urls()
-    system = (
-        "A Vates (vates.hu) magyar, művészeti ihletésű ruhamárka hírlevélírója vagy.\n\n"
-        f"MÁRKA-ALAPOK: {'; '.join(brand['brand_facts'])}\n\n"
-        f"VATES STÍLUSPROFIL:\n{style_profile}\n\n"
-        f"STÍLUSKÖVETÉS (csúszka {adherence}/100): {style_instruction}\n"
-        f"HANGULAT: {mood_text}\n\n"
-        "KÖTELEZŐ SZABÁLYOK:\n"
-        "- Magyarul írj, közvetlen tegeződéssel (te), a márkához illő emoji-használattal.\n"
-        "- NE írj megszólítást (a 'Szia X!' a sablonban fixen szerepel), rögtön a történettel kezdj.\n"
-        "- Félkövér kiemelés markdown jelöléssel: **így**.\n"
-        "- A törzs 4-7 rövid, középre zárt bekezdés legyen, bekezdések között üres sor.\n"
-        "- Tárgy max. 60 karakter, előnézeti szöveg max. 90 karakter.\n"
-        "- CSAK valid JSON-t adj vissza, pontosan ezekkel a kulcsokkal: "
-        '"subject", "preview_text", "body".'
-    )
-    user = f"Kampány témája / brief: {topic}"
-    if notes:
-        user += f"\n\nTovábbi instrukciók az operátortól: {notes}"
-    messages = [{"role": "user", "content": user}]
-    if previous and feedback:
-        messages += [
-            {"role": "assistant", "content": json.dumps(previous, ensure_ascii=False)},
-            {"role": "user", "content": f"Generáld újra a következő visszajelzés alapján: {feedback}"},
-        ]
-    resp = _client().messages.create(
-        model=MODEL, max_tokens=2000, system=system, messages=messages,
-    )
-    result = _extract_json(resp.content[0].text)
-    result["subject"] = result.get("subject", "")[:60]
-    result["preview_text"] = result.get("preview_text", "")[:90]
-    return result
-
-
-# ---------------------------------------------------------------------------
-# Linkajánlás
-# ---------------------------------------------------------------------------
-
-def suggest_links(body_text):
-    """3-5 horgonyszöveg + vates.hu URL javaslat a kész szöveghez."""
-    data = load_vates_urls()
-    url_list = "\n".join(
-        f"- {c['url']} — {c['name']}: {c['theme']}"
-        for c in data["collections"] + data["pages"]
-    )
-    prompt = (
-        "Az alábbi magyar hírlevélszöveghez javasolj 3-5 linket.\n\n"
-        f"HÍRLEVÉL SZÖVEGE:\n{body_text}\n\n"
-        f"VÁLASZTHATÓ VATES.HU URL-EK:\n{url_list}\n\n"
-        "Szabályok:\n"
-        "- A horgonyszöveg (anchor) SZÓ SZERINT, karakterre pontosan szerepeljen a szövegben.\n"
-        "- A kampány fő kollekciójára mutató, legfontosabb linknél \"highlight\": true "
-        "(ez narancs kiemelést kap), a többinél false.\n"
-        "- Adj meg egy \"header_href\" kulcsot is: a header képhez tartozó fő kollekció URL-je.\n"
-        "- CSAK valid JSON-t adj vissza: "
-        '{"header_href": "...", "links": [{"anchor": "...", "url": "...", '
-        '"reason": "rövid magyar indoklás", "highlight": true/false}]}'
-    )
-    resp = _client().messages.create(
-        model=MODEL, max_tokens=1000,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    result = _extract_json(resp.content[0].text)
-    # csak vates.hu linkeket engedünk át
-    result["links"] = [
-        l for l in result.get("links", []) if is_vates_url(l.get("url", ""))
+    parts = [
+        "Egy Vates (vates.hu) hírlevél szövegét írd meg az alábbi paraméterek alapján.",
+        "",
+        f"MÁRKA-ALAPOK: {'; '.join(brand['brand_facts'])}",
+        "",
+        "VATES STÍLUSPROFIL:",
+        style_profile,
+        "",
+        f"STÍLUSKÖVETÉS (csúszka {adherence}/100): {style_instruction}",
+        f"HANGULAT: {mood_text}",
+        "",
+        f"A KAMPÁNY TÉMÁJA / BRIEF: {topic}",
     ]
-    if not is_vates_url(result.get("header_href", "")):
-        result["header_href"] = "https://vates.hu/"
-    return result
+    if notes:
+        parts.append(f"TOVÁBBI INSTRUKCIÓK: {notes}")
+    parts += [
+        "",
+        "KÖTELEZŐ SZABÁLYOK:",
+        "- Magyarul írj, közvetlen tegeződéssel (te), a márkához illő emoji-használattal.",
+        "- NE írj megszólítást (a 'Szia X!' a sablonban fixen szerepel), rögtön a történettel kezdj.",
+        "- Félkövér kiemelés markdown jelöléssel: **így**.",
+        "- A törzs 4-7 rövid, középre zárt bekezdés legyen, bekezdések között üres sor.",
+        "- Tárgy max. 60 karakter, előnézeti szöveg max. 90 karakter.",
+        "",
+        "A VÁLASZ CSAK egy JSON kódblokk legyen, pontosan ezekkel a kulcsokkal:",
+        '```json',
+        '{"subject": "...", "preview_text": "...", "body": "..."}',
+        '```',
+        "(A body-ban a sortöréseket \\n jelölje.)",
+    ]
+    return "\n".join(parts)
 
 
-def is_vates_url(url):
-    return bool(re.match(r"^https?://(www\.)?vates\.hu(/|$)", url or ""))
-
-
-# ---------------------------------------------------------------------------
-# Képek: base64 segéd
-# ---------------------------------------------------------------------------
-
-def _image_to_b64(path, max_size=512):
-    img = Image.open(path)
-    img = img.convert("RGB")
-    img.thumbnail((max_size, max_size))
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=70)
-    return base64.standard_b64encode(buf.getvalue()).decode()
-
-
-def _image_content(path, max_size=512):
+def parse_text_response(pasted):
+    """A beillesztett Claude-válaszból kinyeri a subject/preview_text/body mezőket."""
+    result = _extract_json(pasted)
+    if not isinstance(result, dict) or "body" not in result:
+        raise ValueError("A válasz nem tartalmazza a várt mezőket (subject, preview_text, body).")
     return {
-        "type": "image",
-        "source": {
-            "type": "base64",
-            "media_type": "image/jpeg",
-            "data": _image_to_b64(path, max_size),
-        },
+        "subject": (result.get("subject") or "").strip()[:60],
+        "preview_text": (result.get("preview_text") or "").strip()[:90],
+        "body": (result.get("body") or "").strip(),
     }
 
 
 # ---------------------------------------------------------------------------
-# Vizuális stílusprofil a referencia headerekből
+# Header headline (copy-paste híd, fotóval)
 # ---------------------------------------------------------------------------
 
-def load_visual_cache():
-    if os.path.exists(VISUAL_CACHE_FILE):
-        with open(VISUAL_CACHE_FILE, encoding="utf-8") as f:
-            return json.load(f)
-    return None
-
-
-def build_visual_style_profile(reference_dir):
-    files = sorted(
-        f for f in os.listdir(reference_dir)
-        if f.lower().endswith((".jpg", ".jpeg", ".png", ".webp"))
-    )[:50]
-    if not files:
-        profile = ("Nincs referencia header kép. Általános irányelv: 600x400-as "
-                   "lifestyle/termékfotó, fehér, nagybetűs DIN headline alul.")
-        with open(VISUAL_CACHE_FILE, "w", encoding="utf-8") as f:
-            json.dump({"profile": profile, "count": 0}, f, ensure_ascii=False)
-        return profile
-    content = []
-    for f in files[:20]:  # 20 kép elég a profilhoz, kontextus-kímélő
-        content.append(_image_content(os.path.join(reference_dir, f), max_size=400))
-    content.append({
-        "type": "text",
-        "text": (
-            "Ezek a Vates hírlevelek korábbi header képei (600x400). Készíts "
-            "vizuális stílusprofilt magyarul: tipikus kompozíció (téma- és "
-            "szövegelhelyezés), színpaletta-tendenciák, hangulat és fotós stílus, "
-            "szövegkezelés (méret, súly, pozíció). Tömören, listaszerűen."
-        ),
-    })
-    resp = _client().messages.create(
-        model=MODEL, max_tokens=1000,
-        messages=[{"role": "user", "content": content}],
+def build_headline_prompt(body_text):
+    """Prompt a header-feliratokhoz. Az operátor a fotót is feltölti a chatbe."""
+    return (
+        "Egy Vates hírlevél header képéhez kérek feliratokat. A header fotót "
+        "FELTÖLTÖTTEM EBBE A BESZÉLGETÉSBE — nézd meg a kompozícióját.\n\n"
+        f"A HÍRLEVÉL SZÖVEGE:\n{body_text}\n\n"
+        f"A VATES HEADEREK VIZUÁLIS STÍLUSA:\n{VISUAL_STYLE_PROFILE}\n\n"
+        "Adj 3 KÜLÖNBÖZŐ feliratötletet (headline), eltérő megközelítéssel "
+        "(pl. érzelmi horog / termékfókusz / játékos-ütős). Mindegyikhez:\n"
+        "- ütős, NAGYBETŰS magyar headline, max 5-7 szó (headline)\n"
+        "- a fotó kompozíciója alapján a szöveg helye (position): \"bottom-left\", "
+        "\"bottom-center\", \"bottom-right\", \"top-left\" vagy \"top-center\" — "
+        "oda, ahol nem takar fontos képi elemet és jól olvasható\n"
+        "- rövid magyar indoklás (reason)\n\n"
+        "A VÁLASZ CSAK egy JSON kódblokk legyen:\n"
+        '```json\n'
+        '[{"headline": "...", "position": "bottom-left", "reason": "..."}]\n'
+        '```'
     )
-    profile = resp.content[0].text
-    with open(VISUAL_CACHE_FILE, "w", encoding="utf-8") as f:
-        json.dump({"profile": profile, "count": len(files)}, f, ensure_ascii=False, indent=1)
-    return profile
 
 
-# ---------------------------------------------------------------------------
-# Headline-variánsok az operátor által feltöltött fotóhoz
-# ---------------------------------------------------------------------------
+VALID_POSITIONS = ("bottom-left", "bottom-center", "bottom-right", "top-left", "top-center")
 
-def generate_headline_variants(body_text, photo_path, visual_profile):
-    """A feltöltött fotóhoz 3 különböző headline + pozíció variáns.
 
-    Visszatérés: [{"headline", "position", "reason"}] (pontosan 3).
+def parse_headline_response(pasted):
+    """A beillesztett válaszból kinyeri a 3 feliratot.
+
+    Elsődlegesen JSON-t vár; ha nem sikerül, soronként próbálja értelmezni
+    (robusztusabb copy-paste-hez).
     """
-    content = [
-        _image_content(photo_path, max_size=800),
-        {
-            "type": "text",
-            "text": (
-                f"HÍRLEVÉL SZÖVEGE:\n{body_text}\n\n"
-                f"VIZUÁLIS STÍLUSPROFIL (korábbi Vates headerek alapján):\n{visual_profile}\n\n"
-                "A fenti fotóból készül a hírlevél header képe (600x400). Adj "
-                "3 KÜLÖNBÖZŐ headline-variánst, eltérő megközelítéssel (pl. "
-                "érzelmi horog / termékfókusz / játékos-ütős). Mindegyikhez:\n"
-                "- ütős, NAGYBETŰS magyar headline, max 5-7 szó (headline)\n"
-                "- a fotó kompozíciója alapján a szöveg helye (position): "
-                "\"bottom-left\", \"bottom-center\", \"bottom-right\", "
-                "\"top-left\" vagy \"top-center\" — oda tedd, ahol nem takar "
-                "fontos képi elemet és jól olvasható\n"
-                "- rövid magyar indoklás (reason)\n\n"
-                "CSAK valid JSON-t adj vissza: "
-                '[{"headline": "...", "position": "bottom-left", "reason": "..."}]'
-            ),
-        },
-    ]
-    resp = _client().messages.create(
-        model=MODEL, max_tokens=1000,
-        messages=[{"role": "user", "content": content}],
-    )
-    picks = _extract_json(resp.content[0].text)
     results = []
-    for p in picks[:3]:
-        if p.get("headline"):
+    try:
+        picks = _extract_json(pasted)
+        if isinstance(picks, dict):
+            picks = picks.get("headlines") or picks.get("variants") or [picks]
+        for p in picks[:3]:
+            headline = (p.get("headline") or "").strip()
+            if not headline:
+                continue
+            position = p.get("position", "bottom-left")
+            if position not in VALID_POSITIONS:
+                position = "bottom-left"
             results.append({
-                "headline": p["headline"].upper(),
-                "position": p.get("position", "bottom-left"),
-                "reason": p.get("reason", ""),
+                "headline": headline.upper(),
+                "position": position,
+                "reason": (p.get("reason") or "").strip(),
             })
+    except (ValueError, json.JSONDecodeError, AttributeError, TypeError):
+        # tartalék: nem-JSON válasz, soronként
+        for line in pasted.splitlines():
+            line = line.strip(" -*0123456789.\t")
+            if line:
+                results.append({"headline": line.upper(), "position": "bottom-left", "reason": ""})
+            if len(results) == 3:
+                break
     return results

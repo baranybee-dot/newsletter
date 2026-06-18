@@ -20,5 +20,20 @@
     {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
     {% block content %}{% endblock %}
   </main>
+  <script>
+  // Közös "vágólapra másolom" gomb: data-target a cél textarea id-ja
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest('.copy-btn');
+    if (!btn) return;
+    var el = document.getElementById(btn.dataset.target);
+    if (!el) return;
+    el.select();
+    navigator.clipboard.writeText(el.value).then(function () {
+      var t = btn.textContent; btn.textContent = 'Másolva ✓';
+      setTimeout(function () { btn.textContent = t; }, 1500);
+    });
+  });
+  </script>
+  {% block scripts %}{% endblock %}
 </body>
 </html>

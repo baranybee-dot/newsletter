@@ -9,34 +9,43 @@
 
 <div class="card">
   <h2>Linkek ({{ state.links | length }})</h2>
-  <p><small>Csak vates.hu linkek engedélyezettek. A „kiemelt” link narancs színt kap a levélben.</small></p>
+  <p><small>Rendelj linkeket a szöveghez: a horgonyszöveg pontosan szerepeljen a levélben.
+  Csak vates.hu linkek engedélyezettek. A „kiemelt” link narancs színt kap a levélben.</small></p>
   {% for link in state.links %}
     <form method="post" class="link-row">
       <input type="hidden" name="index" value="{{ loop.index0 }}">
       <span class="anchor">„{{ link.anchor }}”</span>
-      <input type="url" name="url" value="{{ link.url }}">
+      <input type="url" name="url" value="{{ link.url }}" list="vates-url-list">
       <label class="inline">
         <input type="checkbox" name="highlight" {% if link.highlight %}checked{% endif %}> kiemelt
       </label>
       <button type="submit" name="action" value="update">Mentés</button>
       <button type="submit" name="action" value="remove" class="danger">Törlés</button>
-      {% if link.reason %}<small class="reason">{{ link.reason }}</small>{% endif %}
     </form>
   {% else %}
-    <p>Nincs link. Adj hozzá kézzel, vagy térj vissza az 1. lépéshez.</p>
+    <p>Még nincs link. Add hozzá az elsőt lent.</p>
   {% endfor %}
 
   <form method="post" class="link-row add">
     <input type="text" name="anchor" placeholder="horgonyszöveg (pontosan a szövegből)">
-    <input type="url" name="url" placeholder="https://vates.hu/collections/...">
+    <input type="url" name="url" placeholder="https://vates.hu/collections/..." list="vates-url-list">
     <button type="submit" name="action" value="add_manual">+ Link hozzáadása</button>
   </form>
+
+  <datalist id="vates-url-list">
+    {% for c in vates_urls.collections + vates_urls.pages %}
+      <option value="{{ c.url }}">{{ c.name }} — {{ c.theme }}</option>
+    {% endfor %}
+  </datalist>
+  <p><small>Tipp: az URL-mezőbe kattintva a Vates kollekció- és oldal-URL-ek
+  listájából választhatsz.</small></p>
 </div>
 
 <div class="card">
   <h2>Header kép linkje</h2>
+  <p><small>Erre az URL-re visz, ha az olvasó a header képre kattint.</small></p>
   <form method="post" class="link-row">
-    <input type="url" name="header_href" value="{{ state.header_href or 'https://vates.hu/' }}">
+    <input type="url" name="header_href" value="{{ state.header_href or 'https://vates.hu/' }}" list="vates-url-list">
     <button type="submit" name="action" value="set_header">Mentés</button>
   </form>
 </div>

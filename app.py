@@ -24,7 +24,6 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-only-secret")
 
 BUDAPEST = ZoneInfo("Europe/Budapest")
 SESSION_DIR = os.path.join("tmp", "sessions")
-REFERENCE_DIR = os.environ.get("REFERENCE_HEADERS_PATH") or os.path.join("static", "reference_headers")
 ALLOWED_PHOTO_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 SOURCE_PHOTO = "source_photo.jpg"
 
@@ -112,11 +111,35 @@ def get_style_profile():
     return cache["profile"] if cache else None
 
 
-@app.post("/admin/refresh-style")
-def refresh_style():
-    corpus = klaviyo_client.fetch_sent_campaign_corpus(limit=50)
-    ai_client.build_style_profile(corpus)
-    return redirect(url_for("step1"))
+@app.route("/admin/style", methods=["GET", "POST"])
+def style_admin():
+    """A stílusprofil felépítése copy-paste híddal.
+
+    A program kinyeri a korábbi 50 kampányt a Klaviyo-ból, és összeállít egy
+    promptot. Az operátor ezt a saját Claude-chatjébe másolja, a választ
+    (a stílusprofilt) visszamásolja, és elmentjük.
+    """
+    error = None
+    prompt = None
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "build_prompt":
+            try:
+                corpus = klaviyo_client.fetch_sent_campaign_corpus(limit=50)
+                prompt = ai_client.build_style_analysis_prompt(corpus)
+            except Exception as exc:  # noqa: BLE001
+                error = f"Nem sikerült lekérni a korábbi kampányokat: {exc}"
+        elif action == "save_profile":
+            pasted = request.form.get("profile", "").strip()
+            if not pasted:
+                error = "Illeszd be a Claude által adott stílusprofilt."
+            else:
+                ai_client.save_style_profile(pasted)
+                return redirect(url_for("step1"))
+    return render_template(
+        "style_admin.html", error=error, prompt=prompt,
+        style_cache=ai_client.load_style_cache(), active=None,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -127,50 +150,50 @@ def refresh_style():
 def step1():
     state = load_state()
     error = None
+    prompt = None
     if request.method == "POST":
         action = request.form.get("action")
-        if action == "continue":
+        # a paraméterek minden POST-nál mentődnek, hogy ne vesszenek el
+        state["topic"] = request.form.get("topic", state.get("topic", "")).strip()
+        state["adherence"] = int(request.form.get("adherence", state.get("adherence", 80)))
+        if "moods" in request.form:
+            state["selected_moods"] = request.form.getlist("moods")
+        state["notes"] = request.form.get("notes", state.get("notes", "")).strip()
+
+        if action == "build_prompt":
+            profile = get_style_profile()
+            if not state["topic"]:
+                error = "Add meg a kampány témáját!"
+            elif not profile:
+                error = "Először építsd fel a stílusprofilt (lenti link)."
+            else:
+                prompt = ai_client.build_text_generation_prompt(
+                    state["topic"], state["adherence"],
+                    state.get("selected_moods", []), state["notes"], profile,
+                )
+            save_state(state)
+        elif action == "use_response":
+            pasted = request.form.get("response", "").strip()
+            if not pasted:
+                error = "Illeszd be a Claude által adott JSON választ."
+            else:
+                try:
+                    state.update(ai_client.parse_text_response(pasted))
+                except Exception as exc:  # noqa: BLE001
+                    error = f"A válasz nem értelmezhető: {exc}"
+            save_state(state)
+        elif action == "continue":
             state["subject"] = request.form.get("subject", "").strip()[:60]
             state["preview_text"] = request.form.get("preview_text", "").strip()[:90]
             state["body"] = request.form.get("body", "").strip()
             if not (state["subject"] and state["body"]):
                 error = "A tárgy és a törzs nem lehet üres."
             else:
-                state.pop("link_suggestions", None)  # új szöveg -> új javaslatok
                 save_state(state)
                 return redirect(url_for("step2"))
-        else:  # generate / regenerate
-            state["topic"] = request.form.get("topic", "").strip()
-            state["adherence"] = int(request.form.get("adherence", 80))
-            state["selected_moods"] = request.form.getlist("moods")
-            state["notes"] = request.form.get("notes", "").strip()
-            feedback = request.form.get("feedback", "").strip()
-            profile = get_style_profile()
-            if not state["topic"]:
-                error = "Add meg a kampány témáját!"
-            elif not profile:
-                error = "Először építsd fel a stílusprofilt (lenti gomb)."
-            else:
-                try:
-                    previous = None
-                    if feedback and state.get("body"):
-                        previous = {
-                            "subject": state.get("subject", ""),
-                            "preview_text": state.get("preview_text", ""),
-                            "body": state.get("body", ""),
-                        }
-                    result = ai_client.generate_email_text(
-                        state["topic"], state["adherence"], state["selected_moods"],
-                        state["notes"], profile, previous=previous, feedback=feedback or None,
-                    )
-                    state.update(result)
-                except Exception as exc:  # noqa: BLE001
-                    error = f"A generálás nem sikerült: {exc}"
-            save_state(state)
-    style_cache = ai_client.load_style_cache()
     return render_template(
         "step1_text.html", state=state, error=error, active="step1",
-        style_cache=style_cache,
+        style_cache=ai_client.load_style_cache(), prompt=prompt,
     )
 
 
@@ -225,24 +248,14 @@ def step2():
                 return redirect(url_for("step3"))
         save_state(state)
 
-    if "links" not in state:
-        try:
-            suggestion = ai_client.suggest_links(state["body"])
-            state["links"] = [
-                {
-                    "anchor": l["anchor"], "url": l["url"],
-                    "highlight": bool(l.get("highlight")), "reason": l.get("reason", ""),
-                }
-                for l in suggestion["links"] if l["anchor"] in state["body"]
-            ]
-            state.setdefault("header_href", suggestion.get("header_href", "https://vates.hu/"))
-            save_state(state)
-        except Exception as exc:  # noqa: BLE001
-            error = error or f"A linkajánlás nem sikerült: {exc}"
-            state.setdefault("links", [])
-            state.setdefault("header_href", "https://vates.hu/")
+    state.setdefault("links", [])
+    state.setdefault("header_href", "https://vates.hu/")
+    save_state(state)
 
-    return render_template("step2_links.html", state=state, error=error, active="step2")
+    return render_template(
+        "step2_links.html", state=state, error=error, active="step2",
+        vates_urls=ai_client.load_vates_urls(),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -277,6 +290,30 @@ def step3():
                     state.pop("selected_variant", None)
                 except Exception as exc:  # noqa: BLE001
                     error = f"A kép nem dolgozható fel: {exc}"
+        elif action == "use_headlines":
+            pasted = request.form.get("response", "").strip()
+            picks = ai_client.parse_headline_response(pasted) if pasted else []
+            if not picks:
+                error = "Illeszd be a Claude által adott feliratokat (3 db)."
+            else:
+                photo_path = os.path.join(session_image_dir(), state["source_photo"])
+                variants = []
+                for i, pick in enumerate(picks, start=1):
+                    out = os.path.join(session_image_dir(), f"header_v{i}.jpg")
+                    used_size = image_composer.compose_header(
+                        photo_path, pick["headline"], out, position=pick["position"],
+                    )
+                    variants.append({
+                        "file": f"header_v{i}.jpg",
+                        "photo": state["source_photo"],
+                        "headline": pick["headline"],
+                        "position": pick["position"],
+                        "font_size": used_size,
+                        "color": "#FFFFFF",
+                        "reason": pick["reason"],
+                    })
+                state["header_variants"] = variants
+                state.pop("selected_variant", None)
         elif action == "select":
             idx = int(request.form.get("variant", -1))
             if 0 <= idx < len(state.get("header_variants", [])):
@@ -291,38 +328,11 @@ def step3():
             state.pop("selected_variant", None)
         save_state(state)
 
-    if state.get("source_photo") and "header_variants" not in state:
-        try:
-            visual = ai_client.load_visual_cache()
-            profile = (visual["profile"] if visual
-                       else ai_client.build_visual_style_profile(REFERENCE_DIR))
-            photo_path = os.path.join(session_image_dir(), state["source_photo"])
-            picks = ai_client.generate_headline_variants(
-                state["body"], photo_path, profile
-            )
-            variants = []
-            for i, pick in enumerate(picks, start=1):
-                out = os.path.join(session_image_dir(), f"header_v{i}.jpg")
-                used_size = image_composer.compose_header(
-                    photo_path, pick["headline"], out, position=pick["position"],
-                )
-                variants.append({
-                    "file": f"header_v{i}.jpg",
-                    "photo": state["source_photo"],
-                    "headline": pick["headline"],
-                    "position": pick["position"],
-                    "font_size": used_size,
-                    "color": "#FFFFFF",
-                    "reason": pick["reason"],
-                })
-            state["header_variants"] = variants
-            save_state(state)
-        except Exception as exc:  # noqa: BLE001
-            error = f"A variánsok generálása nem sikerült: {exc}"
-
+    prompt = ai_client.build_headline_prompt(state["body"]) if state.get("source_photo") else None
     return render_template(
         "step3_image.html", state=state, error=error, active="step3",
         cache_bust=int(time.time()), din_ok=image_composer.din_font_available(),
+        prompt=prompt,
     )
 
 

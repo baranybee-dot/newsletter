@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Stílusprofil felépítése</h1>
+
+{% if style_cache %}
+  <div class="alert success">
+    Van mentett stílusprofil ({{ style_cache.corpus_size or '?' }} kampányból).
+    Új felépítéssel felülírhatod.
+  </div>
+{% endif %}
+
+<div class="card">
+  <p>A program kinyeri a Klaviyo-ból a legutóbbi 50 elküldött levelet, és összeállít
+  egy promptot. Ezt másold a saját Claude-chatedbe (<a href="https://claude.ai" target="_blank" rel="noopener">claude.ai</a>),
+  a kapott stílusprofilt pedig illeszd vissza ide.</p>
+  <form method="post">
+    <button type="submit" name="action" value="build_prompt" class="primary">
+      Prompt összeállítása a korábbi levelekből
+    </button>
+  </form>
+</div>
+
+{% if prompt %}
+<div class="card">
+  <h2>1. Másold ezt a Claude-ba</h2>
+  <button type="button" class="copy-btn" data-target="style-prompt">Vágólapra másolom</button>
+  <textarea id="style-prompt" rows="12" readonly>{{ prompt }}</textarea>
+</div>
+
+<div class="card">
+  <h2>2. Illeszd be a Claude válaszát (a stílusprofilt)</h2>
+  <form method="post">
+    <textarea name="profile" rows="12" placeholder="Ide jön a Claude által adott stílusprofil..."></textarea>
+    <button type="submit" name="action" value="save_profile" class="primary">Profil mentése →</button>
+  </form>
+</div>
+{% endif %}
+
+<p><a href="{{ url_for('step1') }}">← Vissza a varázslóhoz</a></p>
+{% endblock %}
