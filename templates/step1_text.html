@@ -57,7 +57,7 @@
   <input type="hidden" name="adherence" value="{{ state.adherence if state.adherence is not none else 80 }}">
   <input type="hidden" name="notes" value="{{ state.notes or '' }}">
   <h2>2. Illeszd be a Claude válaszát</h2>
-  <textarea name="response" rows="10" placeholder='{"subject": "...", "preview_text": "...", "body": "..."}'></textarea>
+  <textarea name="response" rows="10" placeholder="Másold ide a Claude teljes válaszát (TÁRGY: ... / ELŐNÉZET: ... / TÖRZS: ...)"></textarea>
   <button type="submit" name="action" value="use_response" class="primary">Válasz feldolgozása →</button>
 </form>
 {% endif %}

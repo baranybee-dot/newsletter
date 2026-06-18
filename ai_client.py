@@ -144,25 +144,66 @@ def build_text_generation_prompt(topic, adherence, moods, notes, style_profile):
         "- A törzs 4-7 rövid, középre zárt bekezdés legyen, bekezdések között üres sor.",
         "- Tárgy max. 60 karakter, előnézeti szöveg max. 90 karakter.",
         "",
-        "A VÁLASZ CSAK egy JSON kódblokk legyen, pontosan ezekkel a kulcsokkal:",
-        '```json',
-        '{"subject": "...", "preview_text": "...", "body": "..."}',
-        '```',
-        "(A body-ban a sortöréseket \\n jelölje.)",
+        "A VÁLASZ pontosan ebben a formátumban legyen, más szöveg nélkül:",
+        "",
+        "TÁRGY: <a tárgysor egy sorban>",
+        "ELŐNÉZET: <az előnézeti szöveg egy sorban>",
+        "TÖRZS:",
+        "<a levél törzse — lehet többsoros, **félkövér** jelöléssel>",
     ]
     return "\n".join(parts)
 
 
+def _label_value(text, labels):
+    """Egysoros érték egy 'CÍMKE:' után."""
+    for lab in labels:
+        m = re.search(rf"(?im)^\s*{lab}\s*:\s*(.+)$", text)
+        if m:
+            return m.group(1).strip()
+    return None
+
+
+def _body_after(text, labels):
+    """Minden, ami a 'CÍMKE:' után jön, a szöveg végéig (többsoros)."""
+    for lab in labels:
+        m = re.search(rf"(?is){lab}\s*:\s*(.+)", text)
+        if m:
+            return m.group(1).strip()
+    return None
+
+
 def parse_text_response(pasted):
-    """A beillesztett Claude-válaszból kinyeri a subject/preview_text/body mezőket."""
-    result = _extract_json(pasted)
-    if not isinstance(result, dict) or "body" not in result:
-        raise ValueError("A válasz nem tartalmazza a várt mezőket (subject, preview_text, body).")
-    return {
-        "subject": (result.get("subject") or "").strip()[:60],
-        "preview_text": (result.get("preview_text") or "").strip()[:90],
-        "body": (result.get("body") or "").strip(),
-    }
+    """A beillesztett Claude-válaszból kinyeri a subject/preview_text/body mezőket.
+
+    Elsődlegesen a címkézett (TÁRGY / ELŐNÉZET / TÖRZS) formátumot várja, ami
+    sortörést és idézőjelet is elvisel; tartalékként a régi JSON formátumot.
+    """
+    text = (pasted or "").strip()
+    # esetleges kódblokk-keretek eltávolítása
+    text = re.sub(r"```[a-zA-Z]*", "", text).strip()
+
+    subject = _label_value(text, ["TÁRGY", "TARGY", "SUBJECT"])
+    preview = _label_value(text, ["ELŐNÉZET", "ELONEZET", "PREVIEW TEXT", "PREVIEW"])
+    body = _body_after(text, ["TÖRZS", "TORZS", "BODY"])
+    if body:
+        return {
+            "subject": (subject or "").strip()[:60],
+            "preview_text": (preview or "").strip()[:90],
+            "body": body,
+        }
+
+    # tartalék: régi JSON formátum
+    try:
+        result = _extract_json(text)
+        if isinstance(result, dict) and "body" in result:
+            return {
+                "subject": (result.get("subject") or "").strip()[:60],
+                "preview_text": (result.get("preview_text") or "").strip()[:90],
+                "body": (result.get("body") or "").strip(),
+            }
+    except (ValueError, json.JSONDecodeError):
+        pass
+    raise ValueError("Nem találom a TÁRGY / ELŐNÉZET / TÖRZS részeket a válaszban.")
 
 
 # ---------------------------------------------------------------------------
@@ -182,11 +223,10 @@ def build_headline_prompt(body_text):
         "- a fotó kompozíciója alapján a szöveg helye (position): \"bottom-left\", "
         "\"bottom-center\", \"bottom-right\", \"top-left\" vagy \"top-center\" — "
         "oda, ahol nem takar fontos képi elemet és jól olvasható\n"
-        "- rövid magyar indoklás (reason)\n\n"
-        "A VÁLASZ CSAK egy JSON kódblokk legyen:\n"
-        '```json\n'
-        '[{"headline": "...", "position": "bottom-left", "reason": "..."}]\n'
-        '```'
+        "- a felirat helye (POZÍCIÓ): bottom-left, bottom-center, bottom-right, "
+        "top-left vagy top-center — oda, ahol nem takar fontos képi elemet\n\n"
+        "A VÁLASZ pontosan 3 sor legyen, más szöveg nélkül, ebben a formában:\n"
+        "FELIRAT: <NAGYBETŰS felirat> | POZÍCIÓ: bottom-left"
     )
 
 
@@ -196,14 +236,17 @@ VALID_POSITIONS = ("bottom-left", "bottom-center", "bottom-right", "top-left", "
 def parse_headline_response(pasted):
     """A beillesztett válaszból kinyeri a 3 feliratot.
 
-    Elsődlegesen JSON-t vár; ha nem sikerül, soronként próbálja értelmezni
-    (robusztusabb copy-paste-hez).
+    Több formátumot is elvisel: JSON, címkézett sorok (FELIRAT: ... | POZÍCIÓ: ...),
+    vagy egyszerű soronkénti feliratok.
     """
-    results = []
+    text = (pasted or "").strip()
+
+    # 1) JSON, ha úgy érkezett
     try:
-        picks = _extract_json(pasted)
+        picks = _extract_json(text)
         if isinstance(picks, dict):
             picks = picks.get("headlines") or picks.get("variants") or [picks]
+        out = []
         for p in picks[:3]:
             headline = (p.get("headline") or "").strip()
             if not headline:
@@ -211,17 +254,30 @@ def parse_headline_response(pasted):
             position = p.get("position", "bottom-left")
             if position not in VALID_POSITIONS:
                 position = "bottom-left"
-            results.append({
-                "headline": headline.upper(),
-                "position": position,
-                "reason": (p.get("reason") or "").strip(),
-            })
+            out.append({"headline": headline.upper(), "position": position,
+                        "reason": (p.get("reason") or "").strip()})
+        if out:
+            return out
     except (ValueError, json.JSONDecodeError, AttributeError, TypeError):
-        # tartalék: nem-JSON válasz, soronként
-        for line in pasted.splitlines():
-            line = line.strip(" -*0123456789.\t")
-            if line:
-                results.append({"headline": line.upper(), "position": "bottom-left", "reason": ""})
-            if len(results) == 3:
-                break
+        pass
+
+    # 2) soronkénti formátum — a megbízható sorokat preferáljuk
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    labeled = [l for l in lines if re.search(r"(?i)felirat\s*:|headline\s*:|bottom-|top-", l)]
+    numbered = [l for l in lines if re.match(r"^\s*(\d+[.)]|[-*•])\s+", l)]
+    plain = [l for l in lines if not l.endswith(":")]
+    candidates = labeled or numbered or plain
+
+    results = []
+    for line in candidates:
+        pm = re.search(r"(bottom-left|bottom-center|bottom-right|top-left|top-center)", line, re.I)
+        position = pm.group(1).lower() if pm else "bottom-left"
+        headline = re.split(r"\|", line)[0]
+        headline = re.sub(r"^\s*(\d+[.)]|[-*•])\s+", "", headline)  # vezető listajelölő
+        headline = re.sub(r"(?i)^\s*(FELIRAT|HEADLINE|CÍM)\s*:\s*", "", headline)
+        headline = headline.strip().strip("\"'„”“").strip()
+        if headline:
+            results.append({"headline": headline.upper(), "position": position, "reason": ""})
+        if len(results) == 3:
+            break
     return results
