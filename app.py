@@ -1,5 +1,6 @@
 """Vates hírlevél-automatizáló — Flask varázsló (6 lépés)."""
 
+import hmac
 import json
 import os
 import time
@@ -21,6 +22,14 @@ import klaviyo_client
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-only-secret")
+
+# Belépési védelem — a felhasználónév és jelszó env változóból jön (Railway),
+# sosem a kódból. Ha az APP_PASSWORD nincs beállítva, az app zárva marad
+# (biztonságos alapértelmezés).
+APP_USERNAME = os.environ.get("APP_USERNAME", "Vates")
+APP_PASSWORD = os.environ.get("APP_PASSWORD")
+# auth nélkül elérhető végpontok (Railway health-check, statikus fájlok, belépés)
+PUBLIC_ENDPOINTS = {"health", "login", "static"}
 
 BUDAPEST = ZoneInfo("Europe/Budapest")
 SESSION_DIR = os.path.join("tmp", "sessions")
@@ -79,6 +88,45 @@ def session_image_dir():
 @app.context_processor
 def inject_globals():
     return {"steps": STEPS, "moods": MOODS}
+
+
+# ---------------------------------------------------------------------------
+# Belépési védelem — minden oldal mögött, a publikus végpontok kivételével
+# ---------------------------------------------------------------------------
+
+@app.before_request
+def require_login():
+    if request.endpoint in PUBLIC_ENDPOINTS:
+        return None
+    if session.get("authed"):
+        return None
+    return redirect(url_for("login"))
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    error = None
+    if request.method == "POST":
+        if not APP_PASSWORD:
+            error = ("A jelszavas védelem nincs beállítva — add meg az APP_PASSWORD "
+                     "(és opcionálisan az APP_USERNAME) környezeti változót a Railwayen.")
+        else:
+            username = request.form.get("username", "")
+            password = request.form.get("password", "")
+            # bájtokra kódolva, hogy az ékezetes jelszó is működjön
+            ok = (hmac.compare_digest(username.encode("utf-8"), APP_USERNAME.encode("utf-8"))
+                  and hmac.compare_digest(password.encode("utf-8"), APP_PASSWORD.encode("utf-8")))
+            if ok:
+                session["authed"] = True
+                return redirect(url_for("index"))
+            error = "Hibás felhasználónév vagy jelszó."
+    return render_template("login.html", error=error, active=None)
+
+
+@app.get("/logout")
+def logout():
+    session.pop("authed", None)
+    return redirect(url_for("login"))
 
 
 # ---------------------------------------------------------------------------

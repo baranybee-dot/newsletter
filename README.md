@@ -36,7 +36,18 @@ gunicorn app:app       # éles (Railway a Procfile alapján)
 ## Környezeti változók
 
 Lásd `.env.example`. Kötelező: `KLAVIYO_API_KEY`, `KLAVIYO_TEMPLATE_ID`,
-`FLASK_SECRET_KEY`. (Anthropic-kulcs **nem** kell — lásd a copy-paste hidat.)
+`FLASK_SECRET_KEY`, `APP_PASSWORD`. (Anthropic-kulcs **nem** kell — lásd a copy-paste hidat.)
+
+## Belépési védelem
+
+Az app megnyitásakor be kell jelentkezni. A belépési adatok env változókból
+jönnek (sosem a kódból):
+
+- `APP_USERNAME` — felhasználónév (alapértelmezés: `Vates`)
+- `APP_PASSWORD` — jelszó (**kötelező**; ha nincs beállítva, a belépés nem
+  lehetséges, az app zárva marad)
+
+A `/health` végpont és a statikus fájlok belépés nélkül is elérhetők.
 
 ## Feltöltendő eszközök (deploy előtt)
 

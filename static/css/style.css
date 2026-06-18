@@ -81,3 +81,22 @@ button.big { font-size: 16px; padding: 13px 26px; }
 
 .audience-list { max-height: 320px; overflow-y: auto; margin-top: 10px; }
 .audience-item { display: block; padding: 3px 0; }
+
+/* Belépőoldal */
+.login-body {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; background: #181818;
+}
+.login-card {
+  background: #fff; border-radius: 10px; padding: 32px 34px;
+  width: 320px; max-width: 90vw; box-shadow: 0 10px 40px rgba(0,0,0,.35);
+}
+.login-logo {
+  font-size: 22px; font-weight: 700; letter-spacing: 4px;
+  text-align: center; margin-bottom: 22px;
+}
+.login-logo span { display: block; font-size: 11px; letter-spacing: 1px; color: #999; font-weight: 400; }
+.login-card button { width: 100%; margin-top: 6px; }
+
+.sidebar .logout { display: block; padding: 11px 24px; margin-top: 20px; color: #888; font-size: 13px; }
+.sidebar .logout:hover { color: #fff; }
